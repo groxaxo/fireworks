@@ -2,7 +2,12 @@
 
 import os
 from typing import List, Dict, Any, Tuple
-import numpy as np
+
+try:
+    import numpy as np
+    NUMPY_AVAILABLE = True
+except ImportError:
+    NUMPY_AVAILABLE = False
 
 class RerankerService:
     """
@@ -65,17 +70,28 @@ class RerankerService:
     
     def _cosine_similarity(self, vec1: List[float], vec2: List[float]) -> float:
         """Calculate cosine similarity between two vectors."""
-        vec1 = np.array(vec1)
-        vec2 = np.array(vec2)
-        
-        dot_product = np.dot(vec1, vec2)
-        norm1 = np.linalg.norm(vec1)
-        norm2 = np.linalg.norm(vec2)
-        
-        if norm1 == 0 or norm2 == 0:
-            return 0.0
-        
-        return dot_product / (norm1 * norm2)
+        if NUMPY_AVAILABLE:
+            vec1 = np.array(vec1)
+            vec2 = np.array(vec2)
+            
+            dot_product = np.dot(vec1, vec2)
+            norm1 = np.linalg.norm(vec1)
+            norm2 = np.linalg.norm(vec2)
+            
+            if norm1 == 0 or norm2 == 0:
+                return 0.0
+            
+            return dot_product / (norm1 * norm2)
+        else:
+            # Fallback implementation without numpy
+            dot_product = sum(a * b for a, b in zip(vec1, vec2))
+            norm1 = sum(a * a for a in vec1) ** 0.5
+            norm2 = sum(b * b for b in vec2) ** 0.5
+            
+            if norm1 == 0 or norm2 == 0:
+                return 0.0
+            
+            return dot_product / (norm1 * norm2)
     
     def _rerank_by_cosine(
         self,
