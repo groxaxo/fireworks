@@ -3,6 +3,12 @@ __pycache__/
 *.py[cod]
 *$py.class
 
+# Backup files
+streamlit_app_original.py
+
+# Test files
+test_services.py
+
 # C extensions
 *.so
 

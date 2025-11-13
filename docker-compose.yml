@@ -1,0 +1,68 @@
+services:
+  # PostgreSQL with pgvector for embeddings
+  postgres:
+    image: ankane/pgvector:latest
+    container_name: fireworks_postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-fireworks_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-fireworks_password}
+      POSTGRES_DB: ${POSTGRES_DB:-fireworks_db}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init_db.sql:/docker-entrypoint-initdb.d/init_db.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-fireworks_user}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ChromaDB for vector storage
+  chromadb:
+    image: chromadb/chroma:latest
+    container_name: fireworks_chromadb
+    ports:
+      - "8000:8000"
+    volumes:
+      - chroma_data:/chroma/chroma
+    environment:
+      - IS_PERSISTENT=TRUE
+      - ANONYMIZED_TELEMETRY=FALSE
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/heartbeat"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Streamlit Application
+  app:
+    build: .
+    container_name: fireworks_app
+    ports:
+      - "8501:8501"
+    environment:
+      - FIREWORKS_API_KEY=${FIREWORKS_API_KEY}
+      - DEEPINFRA_API_KEY=${DEEPINFRA_API_KEY}
+      - SERPAPI_KEY=${SERPAPI_KEY}
+      - POSTGRES_USER=${POSTGRES_USER:-fireworks_user}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-fireworks_password}
+      - POSTGRES_DB=${POSTGRES_DB:-fireworks_db}
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - CHROMA_HOST=chromadb
+      - CHROMA_PORT=8000
+    depends_on:
+      postgres:
+        condition: service_healthy
+      chromadb:
+        condition: service_healthy
+    volumes:
+      - ./streamlit_app.py:/app/streamlit_app.py
+      - ./services:/app/services
+      - ./utils:/app/utils
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  chroma_data:

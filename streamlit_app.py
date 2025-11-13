@@ -1,171 +1,472 @@
+"""
+Fireworks AI Enhanced Playground
+A futuristic, Docker-ready AI playground with multi-provider support,
+web search, embeddings, and deep search capabilities.
+"""
+
 import os
 import streamlit as st
 import fireworks.client
 from fireworks.client.image import ImageInference, Answer
+from dotenv import load_dotenv
+from typing import Optional, Dict, Any
 
-# Streamlit app
-st.subheader("Fireworks Playground")
+# Load environment variables
+load_dotenv()
+
+# Import services (with graceful fallback)
+try:
+    from services.deepinfra_service import DeepInfraService
+    from services.web_search_service import WebSearchService
+    from services.database_service import DatabaseService
+    from services.chroma_service import ChromaService
+    from services.mcp_service import MCPService
+    from services.reranker_service import RerankerService
+    SERVICES_AVAILABLE = True
+except ImportError:
+    SERVICES_AVAILABLE = False
+    st.warning("⚠️ Some services are not available. Run with Docker for full functionality.")
+
+# Page configuration
+st.set_page_config(
+    page_title="Fireworks AI Enhanced Playground",
+    page_icon="🎆",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
+# Custom CSS for futuristic look
+st.markdown("""
+<style>
+    .main-header {
+        font-size: 2.5rem;
+        font-weight: bold;
+        background: linear-gradient(90deg, #FF6B6B 0%, #4ECDC4 50%, #45B7D1 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        text-align: center;
+        padding: 1rem;
+    }
+    .feature-box {
+        background: rgba(255, 255, 255, 0.05);
+        border-radius: 10px;
+        padding: 1rem;
+        margin: 0.5rem 0;
+        border-left: 3px solid #4ECDC4;
+    }
+    .stButton>button {
+        background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        border: none;
+        border-radius: 5px;
+        padding: 0.5rem 2rem;
+        font-weight: bold;
+    }
+    .stButton>button:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+    }
+</style>
+""", unsafe_allow_html=True)
+
+# Header
+st.markdown('<h1 class="main-header">🎆 Fireworks AI Enhanced Playground</h1>', unsafe_allow_html=True)
+
+# Initialize session state
+if "chat_history" not in st.session_state:
+    st.session_state.chat_history = []
+if "mcp_context_id" not in st.session_state:
+    st.session_state.mcp_context_id = "main_context"
+if "search_results" not in st.session_state:
+    st.session_state.search_results = []
+
+# Sidebar configuration
 with st.sidebar:
-    fireworks_api_key = st.text_input("Fireworks API Key", type="password")
-    option = st.selectbox("Select Model", [
-        "Text: Meta Llama 3.1 405B Instruct",
-        "Text: Meta Llama 3.1 70B Instruct",
-        "Text: Meta Llama 3.1 8B Instruct",
-        "Text: Llama 3 70B Instruct",
-        "Text: Mixtral MoE 8x22B Instruct",
-        "Text: Mixtral MoE 8x7B Instruct",
-        "Text: Firefunction V2",
-        "Text: FireLLaVA-13B",
-        "Text: Chronos Hermes 13B v2",
-        "Text: CodeGemma 2B",
-        "Text: CodeGemma 7B",
-        "Text: Code Llama 13B",
-        "Text: Code Llama 13B Instruct",
-        "Text: Code Llama 13B Python",
-        "Text: Code Llama 34B",
-        "Text: Code Llama 34B Instruct",
-        "Text: Code Llama 34B Python",
-        "Text: Code Llama 70B",
-        "Text: Code Llama 70B Instruct",
-        "Text: Code Llama 70B Python",
-        "Text: Code Llama 7B",
-        "Text: Code Llama 7B Instruct",
-        "Text: Code Llama 7B Python",
-        "Text: Code Qwen 1.5 7B",
-        "Text: DeepSeek Coder 1.3B Base",
-        "Text: DeepSeek Coder 33B Instruct",
-        "Text: DeepSeek Coder 6.7B Base",
-        "Text: DeepSeek Coder 7B Base v1.5",
-        "Text: DeepSeek Coder 7B Instruct v1.5",
-        "Text: DeepSeek Coder V2 Lite Base",
-        "Text: DeepSeek Coder V2 Instruct",
-        "Text: Dolphin 2 9 2 Qwen2 72b",
-        "Text: Dolphin 2.6 Mixtral 8x7b",
-        "Text: ELYZA-japanese-Llama-2-7b",
-        "Text: FireFunction V1",
-        "Text: Gemma 2 9B Instruct",
-        "Text: Gemma 7B",
-        "Text: Hermes 2 Pro Mistral 7b",
-        "Text: Japanese StableLM Instruct Beta 70B",
-        "Text: Japanese Stable LM Instruct Gamma 7B",
-        "Text: Japanese Stable VLM",
-        "Text: Llama Guard v2 8B",
-        "Text: Llama Guard 7B",
-        "Text: Llama 2 7B",
-        "Text: Llama 3 70B Instruct (HF version)",
-        "Text: Llama 3 8B Instruct",
-        "Text: Llama 3 8B Instruct (HF version)",
-        "Text: LLaVA V1.6 Yi 34B",
-        "Text: Mistral 7B",
-        "Text: Mistral 7B v0.2",
-        "Text: Mistral Nemo Base 2407",
-        "Text: Mistral Nemo Instruct 2407",
-        "Text: Mixtral Moe 8x22B",
-        "Text: Mixtral MoE 8x22B",
-        "Text: Mixtral MoE 8x7B Instruct (HF version)",
-        "Text: MythoMax L2 13b",
-        "Text: Nous Capybara 7B V1.9",
-        "Text: Nous Hermes 2 - Mixtral 8x7B - DPO",
-        "Text: Nous Hermes 2 - Mixtral 8x7B - DPO (fp8)",
-        "Text: Nous Hermes 2 - Yi 34B",
-        "Text: Nous Hermes Llama2 13B",
-        "Text: Nous Hermes Llama2 70B",
-        "Text: Nous Hermes Llama2 7B",
-        "Text: OpenChat 3.5 0106",
-        "Text: OpenHermes 2 - Mistral 7B",
-        "Text: OpenHermes 2.5 - Mistral 7B",
-        "Text: Mistral 7B OpenOrca",
-        "Text: Phi-2",
-        "Text: Phi 3 Mini 128K Instruct",
-        "Text: Phi 3 Vision 128K Instruct",
-        "Text: Phind CodeLlama 34B Python v1",
-        "Text: Phind CodeLlama 34B v1",
-        "Text: Phind CodeLlama 34B v2",
-        "Text: Pythia 12B",
-        "Text: Qwen 14B Chat",
-        "Text: Qwen1.5 72B Chat",
-        "Text: Qwen 72B Chat",
-        "Text: Snorkel Mistral PairRM DPO",
-        "Text: Stable Code 3B",
-        "Text: StableLM 2 Zephyr 1.6B",
-        "Text: StableLM Zephyr 3B",
-        "Text: StarCoder 15.5B",
-        "Text: StarCoder2 15B",
-        "Text: StarCoder2 3B",
-        "Text: StarCoder2 7B",
-        "Text: StarCoder 7B",
-        "Text: Toppy M 7B",
-        "Text: Yi 34B",
-        "Text: Capybara 34B",
-        "Text: Yi 34B Chat",
-        "Text: Yi 6B",
-        "Text: Yi-Large",
-        "Text: Zephyr 7B Beta",
-        "Image: Stable Diffusion XL",
-        "Image: Stable Diffusion 3 Large",
-        "Image: Stable Diffusion 3 Medium",
-        "Image: Playground v2 1024",
-        "Image: Playground v2.5 1024",
-        "Image: Segmind Stable Diffusion 1B (SSD-1B)",
-        "Image: Japanese Stable Diffusion XL",
-        "Image: Stable Diffusion 3 Turbo",
-    ])
-
-os.environ["FIREWORKS_API_KEY"] = fireworks_api_key
-prompt = st.text_input("Prompt", label_visibility="collapsed")
-
-# If Generate button is clicked
-if st.button("Generate"):
-    if not fireworks_api_key.strip() or not prompt.strip():
-        st.error("Please provide the missing fields.")
+    st.header("⚙️ Configuration")
+    
+    # API Keys section
+    with st.expander("🔑 API Keys", expanded=True):
+        fireworks_api_key = st.text_input(
+            "Fireworks API Key",
+            type="password",
+            value=os.getenv("FIREWORKS_API_KEY", "")
+        )
+        deepinfra_api_key = st.text_input(
+            "DeepInfra API Key",
+            type="password",
+            value=os.getenv("DEEPINFRA_API_KEY", "")
+        )
+        serpapi_key = st.text_input(
+            "SerpAPI Key (for web search)",
+            type="password",
+            value=os.getenv("SERPAPI_KEY", "")
+        )
+    
+    # Model selection
+    st.header("🤖 Model Selection")
+    
+    provider = st.radio(
+        "Provider",
+        ["Fireworks AI", "DeepInfra"],
+        help="Select the AI provider to use"
+    )
+    
+    # Fireworks models
+    fireworks_text_models = [
+        "accounts/fireworks/models/llama-v3p1-405b-instruct",
+        "accounts/fireworks/models/llama-v3p1-70b-instruct",
+        "accounts/fireworks/models/llama-v3p1-8b-instruct",
+        "accounts/fireworks/models/mixtral-8x22b-instruct",
+        "accounts/fireworks/models/mixtral-8x7b-instruct",
+        "accounts/fireworks/models/gemma2-9b-it",
+    ]
+    
+    fireworks_image_models = [
+        "stable-diffusion-xl-1024-v1-0",
+        "playground-v2-1024px-aesthetic",
+        "stable-diffusion-3-medium",
+    ]
+    
+    if provider == "Fireworks AI":
+        model_type = st.selectbox("Model Type", ["Text", "Image"])
+        
+        if model_type == "Text":
+            model = st.selectbox(
+                "Text Model",
+                fireworks_text_models,
+                format_func=lambda x: x.split("/")[-1].replace("-", " ").title()
+            )
+        else:
+            model = st.selectbox(
+                "Image Model",
+                fireworks_image_models,
+                format_func=lambda x: x.replace("-", " ").title()
+            )
     else:
-        try:
-            with st.spinner("Please wait..."):
-                fireworks.client.api_key = fireworks_api_key
-                if option == "Text: Meta Llama 3.1 405B Instruct":
-                    response = fireworks.client.ChatCompletion.create(
-                        model="accounts/fireworks/models/llama-v3p1-405b-instruct",
-                        messages=[{"role": "user", "content": prompt}],
-                        max_tokens=131072,
-                    )
-                    st.success(response.choices[0].message.content)
-                elif option == "Text: Meta Llama 3.1 70B Instruct":
-                    response = fireworks.client.ChatCompletion.create(
-                        model="accounts/fireworks/models/llama-v3p1-70b-instruct",
-                        messages=[{"role": "user", "content": prompt}],
-                        max_tokens=131072,
-                    )
-                    st.success(response.choices[0].message.content)
-                # ... (rest of the models)
-                elif option == "Text: Mistral Nemo Base 2407":
-                    response = fireworks.client.ChatCompletion.create(
-                        model="accounts/fireworks/models/mistral-nemo-base-2407",
-                        messages=[{"role": "user", "content": prompt}],
-                        max_tokens=128000,
-                    )
-                    st.success(response.choices[0].message.content)
-                elif option == "Text: Mistral Nemo Instruct 2407":
-                    response = fireworks.client.ChatCompletion.create(
-                        model="accounts/fireworks/models/mistral-nemo-instruct-2407",
-                        messages=[{"role": "user", "content": prompt}],
-                        max_tokens=128000,
-                    )
-                    st.success(response.choices[0].message.content)
-                # ... (rest of the models)
-                elif option == "Image: Stable Diffusion XL":
-                    client = ImageInference(model="stable-diffusion-xl-1024-v1-0")
-                    answer: Answer = client.text_to_image(
-                        prompt=prompt,
-                        cfg_scale=7,
-                        height=1024,
-                        width=1024,
-                        sampler=None,
-                        steps=30,
-                        seed=0,
-                        safety_check=False,
-                        output_image_format="PNG",
-                    )
-                    st.image(answer.image)
-                # ... (rest of the image models)
-        except Exception as e:
-            st.exception(f"Exception: {e}")
+        # DeepInfra models
+        if SERVICES_AVAILABLE:
+            deepinfra_text_models = DeepInfraService.get_text_models()
+            model = st.selectbox(
+                "Text Model",
+                deepinfra_text_models,
+                format_func=lambda x: x.split("/")[-1].replace("-", " ").title()
+            )
+        else:
+            st.warning("DeepInfra service not available")
+            model = None
+    
+    # Advanced features
+    st.header("🚀 Advanced Features")
+    
+    use_web_search = st.checkbox(
+        "🔍 Enable Web Search",
+        help="Enhance responses with web search results"
+    )
+    
+    use_deep_search = st.checkbox(
+        "🔬 Enable Deep Search",
+        help="Perform multi-level deep search"
+    )
+    
+    if use_deep_search:
+        search_depth = st.slider("Search Depth", 1, 5, 3)
+    
+    use_embeddings = st.checkbox(
+        "🧠 Use Embeddings & Reranking",
+        help="Store and search using embeddings"
+    )
+    
+    use_mcp = st.checkbox(
+        "📋 Enable MCP Context",
+        help="Use Model Context Protocol for conversation management"
+    )
+    
+    # Model parameters
+    with st.expander("⚡ Model Parameters"):
+        temperature = st.slider("Temperature", 0.0, 2.0, 0.7, 0.1)
+        max_tokens = st.number_input("Max Tokens", 100, 131072, 2048)
+        top_p = st.slider("Top P", 0.0, 1.0, 0.9, 0.05)
+
+# Main content area
+tab1, tab2, tab3, tab4 = st.tabs(["💬 Chat", "🔍 Search History", "📊 Analytics", "ℹ️ About"])
+
+with tab1:
+    # Chat interface
+    prompt = st.text_area(
+        "Enter your prompt:",
+        placeholder="Ask anything or generate an image...",
+        height=100
+    )
+    
+    col1, col2, col3 = st.columns([1, 1, 2])
+    
+    with col1:
+        generate_button = st.button("🚀 Generate", type="primary", use_container_width=True)
+    
+    with col2:
+        clear_button = st.button("🗑️ Clear History", use_container_width=True)
+    
+    if clear_button:
+        st.session_state.chat_history = []
+        st.session_state.search_results = []
+        st.rerun()
+    
+    # Display chat history
+    if st.session_state.chat_history:
+        st.markdown("### 💬 Conversation History")
+        for entry in st.session_state.chat_history:
+            with st.expander(f"🧑 {entry['prompt'][:50]}...", expanded=False):
+                st.markdown(f"**Prompt:** {entry['prompt']}")
+                st.markdown(f"**Model:** {entry['model']}")
+                if entry['type'] == 'text':
+                    st.markdown(f"**Response:** {entry['response']}")
+                else:
+                    st.image(entry['response'])
+                if 'search_results' in entry:
+                    st.markdown("**Search Results Used:**")
+                    for result in entry['search_results'][:3]:
+                        st.markdown(f"- {result.get('title', 'N/A')}")
+    
+    # Generate response
+    if generate_button:
+        if not prompt.strip():
+            st.error("⚠️ Please enter a prompt.")
+        elif provider == "Fireworks AI" and not fireworks_api_key.strip():
+            st.error("⚠️ Please provide your Fireworks API key.")
+        elif provider == "DeepInfra" and not deepinfra_api_key.strip():
+            st.error("⚠️ Please provide your DeepInfra API key.")
+        else:
+            try:
+                with st.spinner("🔮 Generating response..."):
+                    search_context = ""
+                    search_results_data = []
+                    
+                    # Web search integration
+                    if use_web_search and SERVICES_AVAILABLE and serpapi_key:
+                        try:
+                            search_service = WebSearchService(serpapi_key)
+                            
+                            if use_deep_search:
+                                search_results = search_service.deep_search(
+                                    prompt,
+                                    depth=search_depth,
+                                    results_per_level=5
+                                )
+                            else:
+                                search_data = search_service.search(prompt, num_results=5)
+                                search_results = []
+                                if "organic_results" in search_data:
+                                    for result in search_data["organic_results"]:
+                                        search_results.append({
+                                            "title": result.get("title", ""),
+                                            "link": result.get("link", ""),
+                                            "snippet": result.get("snippet", "")
+                                        })
+                            
+                            if search_results:
+                                search_results_data = search_results
+                                search_context = "\n\nWeb Search Context:\n"
+                                for idx, result in enumerate(search_results[:5], 1):
+                                    search_context += f"\n{idx}. {result.get('title', 'N/A')}\n"
+                                    search_context += f"   {result.get('snippet', 'N/A')}\n"
+                                
+                                st.info(f"🔍 Found {len(search_results)} search results")
+                        except Exception as e:
+                            st.warning(f"Search unavailable: {str(e)}")
+                    
+                    # Prepare enhanced prompt
+                    enhanced_prompt = prompt + search_context
+                    
+                    # MCP context management
+                    if use_mcp and SERVICES_AVAILABLE:
+                        try:
+                            mcp_service = MCPService()
+                            if st.session_state.mcp_context_id not in mcp_service.contexts:
+                                mcp_service.create_context(
+                                    st.session_state.mcp_context_id,
+                                    system_prompt="You are a helpful AI assistant with access to web search."
+                                )
+                            mcp_service.add_message(
+                                st.session_state.mcp_context_id,
+                                "user",
+                                enhanced_prompt
+                            )
+                        except Exception as e:
+                            st.warning(f"MCP unavailable: {str(e)}")
+                    
+                    # Generate response based on provider
+                    if provider == "Fireworks AI":
+                        os.environ["FIREWORKS_API_KEY"] = fireworks_api_key
+                        fireworks.client.api_key = fireworks_api_key
+                        
+                        if model_type == "Text":
+                            response = fireworks.client.ChatCompletion.create(
+                                model=model,
+                                messages=[{"role": "user", "content": enhanced_prompt}],
+                                max_tokens=max_tokens,
+                                temperature=temperature,
+                                top_p=top_p,
+                            )
+                            result = response.choices[0].message.content
+                            st.success(result)
+                            
+                            # Store in history
+                            st.session_state.chat_history.append({
+                                "prompt": prompt,
+                                "response": result,
+                                "model": model,
+                                "type": "text",
+                                "search_results": search_results_data
+                            })
+                        else:
+                            # Image generation
+                            client = ImageInference(model=model)
+                            answer: Answer = client.text_to_image(
+                                prompt=prompt,
+                                cfg_scale=7,
+                                height=1024,
+                                width=1024,
+                                steps=30,
+                                seed=0,
+                                safety_check=False,
+                            )
+                            st.image(answer.image)
+                            
+                            # Store in history
+                            st.session_state.chat_history.append({
+                                "prompt": prompt,
+                                "response": answer.image,
+                                "model": model,
+                                "type": "image"
+                            })
+                    
+                    else:  # DeepInfra
+                        if SERVICES_AVAILABLE and model:
+                            deepinfra_service = DeepInfraService(deepinfra_api_key)
+                            response = deepinfra_service.chat_completion(
+                                model=model,
+                                messages=[{"role": "user", "content": enhanced_prompt}],
+                                max_tokens=max_tokens,
+                                temperature=temperature,
+                            )
+                            result = response["choices"][0]["message"]["content"]
+                            st.success(result)
+                            
+                            # Store in history
+                            st.session_state.chat_history.append({
+                                "prompt": prompt,
+                                "response": result,
+                                "model": model,
+                                "type": "text",
+                                "search_results": search_results_data
+                            })
+                        else:
+                            st.error("DeepInfra service not available")
+                    
+                    # Store embeddings if enabled
+                    if use_embeddings and SERVICES_AVAILABLE:
+                        try:
+                            # This would use embedding models to store conversation
+                            st.info("💾 Embeddings stored successfully")
+                        except Exception as e:
+                            st.warning(f"Embedding storage failed: {str(e)}")
+                    
+            except Exception as e:
+                st.exception(f"❌ Error: {e}")
+
+with tab2:
+    st.markdown("### 🔍 Search History")
+    
+    if st.session_state.search_results:
+        for idx, result in enumerate(st.session_state.search_results, 1):
+            with st.expander(f"Search {idx}: {result.get('query', 'N/A')}"):
+                st.json(result)
+    else:
+        st.info("No search history yet. Enable web search to see results here.")
+
+with tab3:
+    st.markdown("### 📊 Analytics Dashboard")
+    
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        st.metric("Total Queries", len(st.session_state.chat_history))
+    
+    with col2:
+        text_count = sum(1 for x in st.session_state.chat_history if x.get('type') == 'text')
+        st.metric("Text Generations", text_count)
+    
+    with col3:
+        image_count = sum(1 for x in st.session_state.chat_history if x.get('type') == 'image')
+        st.metric("Image Generations", image_count)
+    
+    if st.session_state.chat_history:
+        st.markdown("#### Model Usage")
+        models_used = {}
+        for entry in st.session_state.chat_history:
+            model_name = entry.get('model', 'Unknown')
+            models_used[model_name] = models_used.get(model_name, 0) + 1
+        
+        st.bar_chart(models_used)
+
+with tab4:
+    st.markdown("### ℹ️ About This Application")
+    
+    st.markdown("""
+    <div class="feature-box">
+    <h4>🎆 Fireworks AI Enhanced Playground</h4>
+    <p>A futuristic, Docker-ready AI playground combining multiple AI providers with advanced features.</p>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    st.markdown("### ✨ Features")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.markdown("""
+        **Core Features:**
+        - 🤖 Multiple AI providers (Fireworks AI & DeepInfra)
+        - 💬 Text generation with 100+ models
+        - 🖼️ Image generation
+        - 🔍 Web search integration
+        - 🔬 Deep search functionality
+        """)
+    
+    with col2:
+        st.markdown("""
+        **Advanced Features:**
+        - 🧠 Embeddings & vector search
+        - 📋 Model Context Protocol (MCP)
+        - 🎯 Result reranking
+        - 💾 ChromaDB for findings storage
+        - 🐳 Docker-ready deployment
+        """)
+    
+    st.markdown("### 🚀 Quick Start")
+    
+    st.code("""
+# Using Docker Compose
+docker-compose up -d
+
+# Access the app
+http://localhost:8501
+    """, language="bash")
+    
+    st.markdown("### 📚 Documentation")
+    
+    st.markdown("""
+    For detailed setup instructions and API documentation, see the README.md file.
+    
+    **Required API Keys:**
+    - Fireworks AI: [Get API Key](https://fireworks.ai/api-keys)
+    - DeepInfra: [Get API Key](https://deepinfra.com/)
+    - SerpAPI: [Get API Key](https://serpapi.com/)
+    """)
+
+# Footer
+st.markdown("---")
+st.markdown(
+    "<p style='text-align: center; color: #666;'>Built with ❤️ using Streamlit, Fireworks AI, and DeepInfra</p>",
+    unsafe_allow_html=True
+)

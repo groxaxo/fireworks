@@ -1,0 +1,39 @@
+# Git
+.git
+.gitignore
+.github
+
+# Python
+__pycache__
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Virtual environments
+venv/
+env/
+ENV/
+.venv
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Project specific
+streamlit_app_original.py
+.env
+*.log
+
+# Documentation
+README_old.md
+
+# Test files
+test_*.py
+*_test.py
